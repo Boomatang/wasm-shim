@@ -88,8 +88,8 @@ jobs:
           git commit -s -m "chore: prepare release v${{ needs.setup.outputs.version }}"
           git push --set-upstream origin "pre-release-v${{ needs.setup.outputs.version }}"
 
-  open-pr:
-    name: Open Pull Request
+  open-release-pr:
+    name: Open Release Pull Request
     needs: [setup, prepare-release]
     runs-on: ubuntu-latest
     steps:
@@ -111,3 +111,63 @@ jobs:
           This PR updates \`release.yaml\` and \`Cargo.toml\` to version \`${{ needs.setup.outputs.version }}\`.
 
           Once the version gate check passes and this PR is approved and merged, trigger the **Release** workflow with branch \`${{ needs.setup.outputs.release-branch }}\` to publish the release."
+
+  bump-dev:
+    name: Bump Dev Version
+    needs: [setup, prepare-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source-branch }}
+
+      - name: Compute next dev version
+        id: next
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          # Strip any pre-release/build metadata
+          BASE=$(echo "$VERSION" | sed 's/[+-].*//')
+          MAJOR=$(echo "$BASE" | cut -d. -f1)
+          MINOR=$(echo "$BASE" | cut -d. -f2)
+          PATCH=$(echo "$BASE" | cut -d. -f3)
+          if [ "$PATCH" = "0" ]; then
+            NEXT_DEV="${MAJOR}.$((MINOR + 1)).0-dev"
+          else
+            NEXT_DEV="${MAJOR}.${MINOR}.$((PATCH + 1))-dev"
+          fi
+          echo "next-dev=$NEXT_DEV" >> "$GITHUB_OUTPUT"
+
+      - name: Create working branch
+        run: |
+          git checkout -b "post-release-v${{ needs.setup.outputs.version }}"
+
+      - name: Update Cargo.toml to next dev version
+        run: |
+          sed -i '0,/^version = ".*"/s//version = "${{ steps.next.outputs.next-dev }}"/' Cargo.toml
+
+      - name: Set up Rust and WASM environment
+        uses: ./.github/actions/setup-rust-wasm
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Cargo.lock
+        run: cargo check --target wasm32-wasip1
+
+      - name: Commit and push changes
+        run: |
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git config user.name "${{ github.actor }}"
+          git add Cargo.toml Cargo.lock
+          git commit -s -m "chore: bump version to ${{ steps.next.outputs.next-dev }}"
+          git push --set-upstream origin "post-release-v${{ needs.setup.outputs.version }}"
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base "${{ inputs.source-branch }}" \
+            --head "post-release-v${{ needs.setup.outputs.version }}" \
+            --title "chore: bump version to ${{ steps.next.outputs.next-dev }}" \
+            --body "Bump \`Cargo.toml\` version to \`${{ steps.next.outputs.next-dev }}\` after the v${{ needs.setup.outputs.version }} release."
