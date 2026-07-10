@@ -71,8 +71,8 @@ jobs:
           rust-components: rustfmt, clippy
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: cargo check
-        run: cargo check --release --target wasm32-wasip1
+      - name: cargo build (wasm)
+        run: cargo build --release --target wasm32-wasip1
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
