@@ -41,6 +41,7 @@ runs:
       shell: bash
       run: |
         cargo set-version --offline -p wasm-shim "$WASM_SHIM_VERSION"
+        cargo set-version --offline -p kuadrant-filter "$WASM_SHIM_VERSION"
 
     - name: Update Cargo.lock
       shell: bash

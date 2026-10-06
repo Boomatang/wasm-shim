@@ -125,7 +125,7 @@ jobs:
   bump-dev:
     name: Bump Dev Version
     if: inputs.source-branch == 'main'
-    needs: [setup, prepare-release]
+    needs: [setup, prepare-release, open-release-pr]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source branch
@@ -158,26 +158,11 @@ jobs:
           fi
           git checkout -b "${POST_RELEASE_BRANCH}"
 
-      - name: Set up Rust and WASM environment
-        uses: ./.github/actions/setup-rust-wasm
+      - name: Bump dev versions
+        uses: ./.github/actions/prepare-release
         with:
+          version: ${{ steps.next.outputs.next-dev }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - run: cargo install cargo-edit --version 0.13.13
-
-      - name: Update Cargo.toml to next dev version
-        run: |
-          cargo set-version --offline -p wasm-shim "${{ steps.next.outputs.next-dev }}"
-
-      - uses: ./.github/actions/install-yq
-
-      - name: Sync release.yaml from Cargo.toml
-        run: |
-          chmod +x .github/scripts/sync-release-yaml.sh
-          .github/scripts/sync-release-yaml.sh
-
-      - name: Update Cargo.lock
-        run: cargo check --target wasm32-wasip1
 
       - name: Commit and push changes
         run: |
@@ -194,5 +179,5 @@ jobs:
           gh pr create \
             --base "${{ inputs.source-branch }}" \
             --head "post-release-v${{ needs.setup.outputs.version }}" \
-            --title "chore: bump version to ${{ steps.next.outputs.next-dev }}" \
-            --body "Bump \`Cargo.toml\` version to \`${{ steps.next.outputs.next-dev }}\` after the v${{ needs.setup.outputs.version }} release."
+            --title "chore: bump versions to ${{ steps.next.outputs.next-dev }}" \
+            --body "Bump \`Cargo.toml\` version of wasm-shim and kuadrant-filter to \`${{ steps.next.outputs.next-dev }}\` after the v${{ needs.setup.outputs.version }} release."

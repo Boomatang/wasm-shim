@@ -21,7 +21,7 @@ jobs:
     name: Read Version
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.parse.outputs.version }}
+      wasm_shim_version: ${{ steps.parse.outputs.wasm_shim_version }}
       tag: ${{ steps.parse.outputs.tag }}
       prerelease: ${{ steps.parse.outputs.prerelease }}
     steps:
@@ -44,25 +44,25 @@ jobs:
       - name: Parse version from release.yaml
         id: parse
         run: |
-          VERSION=$(yq '.wasm-shim.version' release.yaml)
-          if [ -z "$VERSION" ] || [ "$VERSION" = "0.0.0" ]; then
+          WASM_SHIM_VERSION=$(yq '.wasm-shim.version' release.yaml)
+          if [ -z "$WASM_SHIM_VERSION" ] || [ "$WASM_SHIM_VERSION" = "0.0.0" ]; then
             echo "::error::release.yaml version is unset or 0.0.0 — run the pre-release workflow first"
             exit 1
           fi
-          TAG="v$VERSION"
+          TAG="v$WASM_SHIM_VERSION"
           PRERELEASE=false
-          if echo "$VERSION" | grep -q -- '-'; then
+          if echo "$WASM_SHIM_VERSION" | grep -q -- '-'; then
             PRERELEASE=true
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "wasm_shim_version=$WASM_SHIMVERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "Releasing version $VERSION (tag: $TAG, prerelease: $PRERELEASE)"
+          echo "Releasing wasm shim version $WASM_SHIM_VERSION (tag: $TAG, prerelease: $PRERELEASE)"
 
       - name: Validate branch matches version
         env:
           RELEASE_BRANCH: ${{ inputs.release-branch }}
-          VERSION: ${{ steps.parse.outputs.version }}
+          VERSION: ${{ steps.parse.outputs.wasm_shim_version }}
         run: |
           MAJOR=$(echo "$VERSION" | cut --delimiter=. --fields=1)
           MINOR=$(echo "$VERSION" | cut --delimiter=. --fields=2)
@@ -179,8 +179,7 @@ jobs:
       IMG_REGISTRY_TOKEN: ${{ secrets.IMG_REGISTRY_TOKEN }}
 
   create-release:
-    name: Create GitHub Release
-    needs: [read-version, build-wasm, build-image]
+    needs: [read-version, build-wasm, build-images]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -188,7 +187,7 @@ jobs:
       - name: Checkout tag
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.read-version.outputs.tag }}
+          ref: ${{ inputs.release-branch }}
 
       - name: Download WASM artifact
         uses: actions/download-artifact@v4
@@ -196,11 +195,32 @@ jobs:
           name: wasm-binary
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: ${{ needs.read-version.outputs.tag }}
-          tag_name: ${{ needs.read-version.outputs.tag }}
-          prerelease: ${{ needs.read-version.outputs.prerelease }}
-          generate_release_notes: true
-          files: "kuadrant-wasm-shim-${{ needs.read-version.outputs.tag }}"
-          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.read-version.outputs.wasm_shim_version }}
+          PRERELEASE: ${{ needs.read-version.outputs.prerelease }}
+        run: |
+          TAG="v${VERSION}"
+
+          NOTES=$(cat <<EOF
+          ## Artifacts
+
+          - **Container image**: \`quay.io/kuadrant/wasm-shim:v${VERSION}\`
+
+          ## Tags
+
+          - \`v${VERSION}\`
+          EOF
+          )
+
+          PRERELEASE_FLAG=""
+          if [ "$PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "$TAG" \
+            "kuadrant-wasm-shim-${TAG}" \
+            --title "Release v${VERSION}" \
+            --generate-notes \
+            --notes "$NOTES" \
+            $PRERELEASE_FLAG

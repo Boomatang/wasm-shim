@@ -4,7 +4,6 @@ name: Build WASM Image
 on:
   push:
     branches: ["*"]
-    tags: ["*"]
   pull_request:
     branches: ["*"]
   workflow_dispatch: {}
@@ -62,6 +61,20 @@ jobs:
         run: |
           echo "GIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
+      - name: Read quay image expiry
+        id: quay-expiry
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ ${{!inputs.image-tags}} && ${{github.ref_name}} == ${{env.MAIN_BRANCH_NAME}} ]]; then
+            echo "expiry=never" >> $GITHUB_OUTPUT
+            echo "Setting expiry to 'never' for ref $REF_NAME"
+          else
+            expiry=`make read-quay-image-expiry`
+            echo "expiry=$expiry" >> $GITHUB_OUTPUT
+            echo "Reading expiry from Makefile, set to $expiry for ref $REF_NAME"
+          fi
+
       - name: Build Image
         id: build-image
         uses: redhat-actions/buildah-build@v2
@@ -70,6 +83,7 @@ jobs:
           tags: ${{ env.IMG_TAGS }}
           build-args: |
             GITHUB_SHA=${{ env.GIT_SHA }}
+            QUAY_IMAGE_EXPIRY=${{ steps.quay-expiry.outputs.expiry }}
           dockerfiles: |
             ./Dockerfile
 
