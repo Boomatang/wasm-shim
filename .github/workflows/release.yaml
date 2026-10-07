@@ -179,7 +179,7 @@ jobs:
       IMG_REGISTRY_TOKEN: ${{ secrets.IMG_REGISTRY_TOKEN }}
 
   create-release:
-    needs: [read-version, build-wasm, build-images]
+    needs: [read-version, build-wasm, build-image]
     runs-on: ubuntu-latest
     permissions:
       contents: write
